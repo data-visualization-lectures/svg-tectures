@@ -116,8 +116,8 @@ class TextureEditor {
             .attr('y', d => yScale(d.value))
             .attr('width', xScale.bandwidth())
             .attr('height', d => height - yScale(d.value))
-            .attr('fill', this.currentFgColor)
-            .attr('stroke', this.currentBgColor)
+            .attr('fill', this.currentBgColor)
+            .attr('stroke', this.currentFgColor)
             .attr('stroke-width', 2);
 
         // Add axes
@@ -158,17 +158,14 @@ class TextureEditor {
         const pie = d3.pie().value(d => d.value);
         const arc = d3.arc().innerRadius(0).outerRadius(radius);
 
-        const colors = [this.currentFgColor, this.adjustColor(this.currentFgColor, 30),
-                       this.adjustColor(this.currentFgColor, 60), this.adjustColor(this.currentFgColor, -30)];
-
         g.selectAll('.arc')
             .data(pie(data))
             .join('g')
             .attr('class', 'arc')
             .append('path')
             .attr('d', arc)
-            .attr('fill', (d, i) => colors[i])
-            .attr('stroke', this.currentBgColor)
+            .attr('fill', this.currentBgColor)
+            .attr('stroke', this.currentFgColor)
             .attr('stroke-width', 2);
 
         this.applyTextureToElements(svg);
@@ -218,8 +215,8 @@ class TextureEditor {
             .data(nodes)
             .join('circle')
             .attr('r', 20)
-            .attr('fill', this.currentFgColor)
-            .attr('stroke', this.currentBgColor)
+            .attr('fill', this.currentBgColor)
+            .attr('stroke', this.currentFgColor)
             .attr('stroke-width', 2);
 
         simulation.on('tick', () => {
@@ -253,15 +250,16 @@ class TextureEditor {
         const cellWidth = 600 / cols;
         const cellHeight = 400 / rows;
 
-        svg.selectAll('rect')
+        svg.selectAll('rect.grid-cell')
             .data(d3.range(rows * cols))
             .join('rect')
+            .attr('class', 'grid-cell')
             .attr('x', d => (d % cols) * cellWidth)
             .attr('y', d => Math.floor(d / cols) * cellHeight)
             .attr('width', cellWidth)
             .attr('height', cellHeight)
-            .attr('fill', (d, i) => i % 2 === 0 ? this.currentFgColor : this.adjustColor(this.currentFgColor, 40))
-            .attr('stroke', this.currentBgColor)
+            .attr('fill', this.currentBgColor)
+            .attr('stroke', this.currentFgColor)
             .attr('stroke-width', 2);
 
         this.applyTextureToElements(svg);
@@ -394,7 +392,7 @@ class TextureEditor {
             svg.call(tx);
 
             // Apply texture to all fillable elements
-            svg.selectAll('rect, circle, path')
+            svg.selectAll('rect.bar, rect.grid-cell, circle, path:not([role="link"])')
                 .style('fill', tx.url());
         } catch (e) {
             console.warn('Texture application note:', this.currentTexture, e.message);
