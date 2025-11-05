@@ -1,0 +1,80 @@
+/* Custom styles for SVG Texture Editor */
+
+:root {
+    --primary-blue: #2563eb;
+    --primary-blue-hover: #1d4ed8;
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --border-color: #e5e7eb;
+    --background-light: #f9fafb;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* SVG Container */
+#svg-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #fafafa;
+    position: relative;
+    overflow: auto;
+}
+
+#svg-container svg {
+    max-width: 100%;
+    max-height: 100%;
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.1));
+}
+
+/* Texture Pattern - responsive adjustments */
+@media (max-width: 1024px) {
+    #svg-container {
+        min-height: 400px;
+    }
+}
+
+/* Input Focus Styles */
+input[type="color"]:focus,
+select:focus {
+    outline: none;
+    ring: 2px;
+    ring-color: var(--primary-blue);
+}
+
+/* Control Panel - Card Styling */
+.control-card {
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Button Styles */
+button {
+    transition: all 0.2s ease;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+/* Color Input Display */
+#fg-color-value,
+#bg-color-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+
+/* Smooth transitions for SVG updates */
+svg {
+    transition: all 0.3s ease;
+}
+
+/* Loading state */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
