@@ -7,11 +7,41 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const AUTH_APP_URL = "https://auth.dataviz.jp";
 const API_BASE_URL = "https://api.dataviz.jp";
 
-// ---- Supabase クライアント作成（CDN 版） ----
-const supabase = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
+// ---- クッキーでセッションを共有するためのストレージ実装 ----
+const COOKIE_DOMAIN = ".dataviz.jp";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+const cookieStorage = {
+  getItem: (key) => {
+    const cookies = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    for (const c of cookies) {
+      const [k, ...rest] = c.split("=");
+      if (k === key) {
+        return decodeURIComponent(rest.join("="));
+      }
+    }
+    return null;
+  },
+  setItem: (key, value) => {
+    const encoded = encodeURIComponent(value);
+    document.cookie = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Domain=${COOKIE_DOMAIN}; Path=/; SameSite=Lax; Secure`;
+  },
+  removeItem: (key) => {
+    document.cookie = `${key}=; Max-Age=0; Domain=${COOKIE_DOMAIN}; Path=/; SameSite=Lax; Secure`;
+  },
+};
+
+// ---- Supabase クライアント作成（CDN 版・cookie storage） ----
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: cookieStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
 // ---- セッション取得 ----
 async function getSession() {
@@ -29,7 +59,7 @@ async function requireLogin() {
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
     // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
-    window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirectTo=${redirectTo}`;
+    window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
     return null;
   }
   return session;
