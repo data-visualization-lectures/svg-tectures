@@ -56,18 +56,29 @@ async function getSession() {
 // ---- リダイレクト後のURLハッシュからセッションを復元 ----
 async function recoverSessionFromUrl() {
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const searchParams = new URLSearchParams(window.location.search);
+
   const hasSupabaseParams =
-    hashParams.has("access_token") || hashParams.has("code") || hashParams.has("refresh_token");
+    hashParams.has("access_token") ||
+    hashParams.has("refresh_token") ||
+    hashParams.has("code") ||
+    searchParams.has("code") ||
+    searchParams.has("access_token");
+
   if (!hasSupabaseParams) return null;
 
-  const { data, error } = await supabase.auth.getSessionFromUrl({ storeSession: true });
+  // hash / query のどちらでも拾えるように url を明示指定
+  const { data, error } = await supabase.auth.getSessionFromUrl({
+    storeSession: true,
+    url: window.location.href,
+  });
   if (error) {
     console.error("getSessionFromUrl error", error);
     return null;
   }
 
-  // ハッシュは不要なので消す（同一ページでの再読込ループを防ぐ）
-  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+  // ハッシュ・クエリは不要なので消す（同一ページでの再読込ループを防ぐ）
+  window.history.replaceState({}, document.title, window.location.pathname);
   return data.session ?? null;
 }
 
