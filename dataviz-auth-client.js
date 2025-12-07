@@ -53,8 +53,29 @@ async function getSession() {
   return data.session ?? null;
 }
 
+// ---- リダイレクト後のURLハッシュからセッションを復元 ----
+async function recoverSessionFromUrl() {
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const hasSupabaseParams =
+    hashParams.has("access_token") || hashParams.has("code") || hashParams.has("refresh_token");
+  if (!hasSupabaseParams) return null;
+
+  const { data, error } = await supabase.auth.getSessionFromUrl({ storeSession: true });
+  if (error) {
+    console.error("getSessionFromUrl error", error);
+    return null;
+  }
+
+  // ハッシュは不要なので消す（同一ページでの再読込ループを防ぐ）
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+  return data.session ?? null;
+}
+
 // ---- 未ログインなら auth.dataviz.jp へ飛ばす ----
 async function requireLogin() {
+  // リダイレクト直後にハッシュからセッションを取り込む
+  await recoverSessionFromUrl();
+
   const session = await getSession();
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
