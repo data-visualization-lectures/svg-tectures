@@ -20,7 +20,9 @@ const cookieStorage = {
     for (const c of cookies) {
       const [k, ...rest] = c.split("=");
       if (k === key) {
-        return decodeURIComponent(rest.join("="));
+        const val = decodeURIComponent(rest.join("="));
+        console.log("[dataviz-auth-client] cookieStorage.getItem hit", { key, val });
+        return val;
       }
     }
     return null;
