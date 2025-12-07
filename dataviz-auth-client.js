@@ -6,6 +6,7 @@ const SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTA1NjgyMywiZXhwIjoyMDgwNjMyODIzfQ.vq7xTIU6-U6W7Bx6g8aagm64JNuxn4vTvAKZ0a-AcBc";
 const AUTH_APP_URL = "https://auth.dataviz.jp";
 const API_BASE_URL = "https://api.dataviz.jp";
+const DEBUG_PARAM = "auth_debug";
 
 // ---- クッキーでセッションを共有するためのストレージ実装 ----
 const COOKIE_DOMAIN = ".dataviz.jp";
@@ -33,6 +34,11 @@ const cookieStorage = {
   },
 };
 
+function isAuthDebugMode() {
+  const params = new URLSearchParams(window.location.search);
+  return params.has(DEBUG_PARAM);
+}
+
 // ---- Supabase クライアント作成（CDN 版・cookie storage） ----
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -45,11 +51,13 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 // ---- セッション取得 ----
 async function getSession() {
+  console.log("[dataviz-auth-client] getSession start. href:", window.location.href);
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     console.error("getSession error", error);
     return null;
   }
+  console.log("[dataviz-auth-client] getSession result:", data);
   return data.session ?? null;
 }
 
@@ -79,6 +87,7 @@ async function recoverSessionFromUrl() {
 
   // ハッシュ・クエリは不要なので消す（同一ページでの再読込ループを防ぐ）
   window.history.replaceState({}, document.title, window.location.pathname);
+  console.log("[dataviz-auth-client] session recovered from url", data);
   return data.session ?? null;
 }
 
@@ -89,6 +98,13 @@ async function requireLogin() {
 
   const session = await getSession();
   if (!session) {
+    console.log("[dataviz-auth-client] session missing. cookies now:", document.cookie);
+  }
+  if (!session) {
+    if (isAuthDebugMode()) {
+      console.warn("[dataviz-auth-client] debug mode: redirect suppressed");
+      return null;
+    }
     const redirectTo = encodeURIComponent(window.location.href);
     // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
     window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
