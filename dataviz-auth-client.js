@@ -2,8 +2,8 @@
 // ※ これは 2024 年頃の Supabase JS v2 の API 記憶にもとづく例です。
 
 // ---- 設定（あなたの環境に合わせて置き換え） ----
-const SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";      // あなたの Supabase URL
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTA1NjgyMywiZXhwIjoyMDgwNjMyODIzfQ.vq7xTIU6-U6W7Bx6g8aagm64JNuxn4vTvAKZ0a-AcBc";   // public anon key
+const SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTA1NjgyMywiZXhwIjoyMDgwNjMyODIzfQ.vq7xTIU6-U6W7Bx6g8aagm64JNuxn4vTvAKZ0a-AcBc";
 const AUTH_APP_URL = "https://auth.dataviz.jp";
 const API_BASE_URL = "https://api.dataviz.jp";
 
@@ -29,7 +29,7 @@ async function requireLogin() {
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
     // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
-    window.location.href = `${AUTH_APP_URL}/auth/sign-in?redirectTo=${redirectTo}`;
+    window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirectTo=${redirectTo}`;
     return null;
   }
   return session;
