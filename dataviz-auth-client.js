@@ -61,8 +61,14 @@ const cookieStorage = {
 
         // 2. Base64 check
         try {
+          // Supabase SSR (v2-rcなど) は 'base64-' プレフィックスを付けることがある
+          let toDecode = rawVal;
+          if (toDecode.startsWith('base64-')) {
+            toDecode = toDecode.slice('base64-'.length);
+          }
+
           // URL Safe Base64対応: - -> +, _ -> /
-          const base64Standard = rawVal.replace(/-/g, '+').replace(/_/g, '/');
+          const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
           const decoded = atob(base64Standard);
           JSON.parse(decoded);
           console.log(`[dataviz-auth-client] Cookie is Base64 JSON.`);
