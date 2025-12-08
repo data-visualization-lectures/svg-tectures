@@ -183,6 +183,16 @@ function updateUiWithSubscriptionStatus(me) {
 
   if (paidEl) paidEl.style.display = isActive ? "block" : "none";
   if (upgradeEl) upgradeEl.style.display = isActive ? "none" : "block";
+
+  // サブスクリプションが有効でない場合はリダイレクト
+  if (!isActive) {
+    if (isAuthDebugMode()) {
+      console.warn(`[dataviz-auth-client] Subscription status is '${status}' (not active). Redirect suppressed due to debug mode.`);
+    } else {
+      // ループ防止のため redirect_to はあえて付けずにアカウントページ（ログインページ）へ遷移させる
+      window.location.href = AUTH_APP_URL;
+    }
+  }
 }
 
 // ---- エントリーポイント ----
