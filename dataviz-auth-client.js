@@ -119,6 +119,11 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+function isAuthDebugMode() {
+  const params = new URLSearchParams(window.location.search);
+  return params.has("auth_debug");
+}
+
 // ---- 未ログインなら auth.dataviz.jp へ飛ばす ----
 async function requireLogin(session) {
   if (session) return session;
