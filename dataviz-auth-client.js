@@ -1,7 +1,4 @@
-// dataviz-auth-client.js
-// ※ これは 2024 年頃の Supabase JS v2 の API 記憶にもとづく例です。
-
-// ---- 設定（あなたの環境に合わせて置き換え）// ---- 設定 ----
+// ---- 設定 ----
 const SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyMjI2MTIsImV4cCI6MjA0NTc5ODYxMn0.sV-Xf6wP_m46D_q-XN0oZfK9NogDqD9xV5sS-n6J8c4"; // 公開OKなAnon Key
 const API_BASE_URL = "https://api.dataviz.jp"; // ユーザープロファイルAPIなど
