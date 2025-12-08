@@ -39,14 +39,33 @@ const cookieStorage = {
     for (const c of cookies) {
       const [k, ...rest] = c.split("=");
       if (k === key) {
-        const val = rest.join("=");
-        // console.log(`[dataviz-auth-client] Raw cookie found for ${key}:`, val); // 非常に冗長になる可能性があるのでコメントアウト
+        // デコード前の生の値を保持（URLデコードは済ませておくのが安全だが、document.cookieは基本生）
+        // 一般的には decodeURIComponent が必要
+        const rawVal = decodeURIComponent(rest.join("="));
+        console.log(`[dataviz-auth-client] Found cookie: ${key}, Raw length: ${rawVal.length}`);
+
+        // 1. まずそのままJSONパースを試みる（サーバーがBase64してない場合）
         try {
-          const decoded = atob(val);
-          // console.log(`[dataviz-auth-client] Decoded cookie ${key}:`, decoded.substring(0, 20) + "..."); 
+          JSON.parse(rawVal);
+          console.log(`[dataviz-auth-client] Cookie is raw JSON. Using as is.`);
+          return rawVal;
+        } catch (e) {
+          // JSONでなければ次へ
+        }
+
+        // 2. Base64デコードを試みる（サーバーがBase64している場合）
+        try {
+          const decoded = atob(rawVal);
+          // デコード結果がJSONかチェック
+          JSON.parse(decoded);
+          console.log(`[dataviz-auth-client] Cookie is Base64 encoded JSON. Digested.`);
           return decoded;
         } catch (e) {
-          console.warn(`[dataviz-auth-client] Failed to decode cookie ${key}:`, e);
+          console.warn(`[dataviz-auth-client] Failed to parse cookie ${key} as JSON or Base64-JSON.`, e);
+          // 3. 最後のあがき：もしかしたら「生トークン文字列」そのものかも？
+          // Supabase JS は JSON を期待するが、もし文字列ならそのまま返す手もあるが一旦null
+          // ログに中身を少し出してデバッグ
+          console.log(`[dataviz-auth-client] Invalid cookie content head: ${rawVal.substring(0, 20)}...`);
           return null;
         }
       }
