@@ -22,7 +22,7 @@ function getCookieDomain() {
     hostname === "127.0.0.1" ||
     hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)
   ) {
-    console.log("[dataviz-auth-client] Running on localhost/IP. Cookie domain: (none)");
+
     return null;
   }
   return ".dataviz.jp";
@@ -35,7 +35,7 @@ const cookieStorage = {
     // Supabase JSSDKはデフォルトのキー名で呼んでくるかもしれないが、
     // ここではガイドで指定された AUTH_COOKIE_NAME を優先的に（あるいは強制的に）探すべき。
     // ただし SDK 初期化時に storageKey を指定するので、key 引数は AUTH_COOKIE_NAME になるはず。
-    console.log(`[dataviz-auth-client] getItem called for key: ${key}`);
+
 
     const cookies = document.cookie
       .split(";")
@@ -51,7 +51,7 @@ const cookieStorage = {
         // 1. Raw JSON check
         try {
           JSON.parse(rawVal);
-          // console.log(`[dataviz-auth-client] Cookie is raw JSON.`);
+
           return rawVal;
         } catch (e) {
           // Not raw JSON
@@ -69,7 +69,7 @@ const cookieStorage = {
           const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
           const decoded = atob(base64Standard);
           JSON.parse(decoded);
-          // console.log(`[dataviz-auth-client] Cookie is Base64 JSON.`);
+
           return decoded;
         } catch (e) {
           console.warn(`[dataviz-auth-client] Failed to parse cookie: ${key}`);
@@ -77,7 +77,7 @@ const cookieStorage = {
         }
       }
     }
-    console.log(`[dataviz-auth-client] Cookie not found: ${key}`);
+
     return null;
   },
   setItem: (key, value) => {
@@ -103,7 +103,7 @@ const cookieStorage = {
     }
 
     document.cookie = cookieStr;
-    console.log(`[dataviz-auth-client] Set cookie: ${key} (Domain: ${domain || 'Current Host'})`);
+
   },
   removeItem: (key) => {
     const domain = getCookieDomain();
@@ -112,7 +112,7 @@ const cookieStorage = {
       cookieStr += `; Domain=${domain}`;
     }
     document.cookie = cookieStr;
-    console.log(`[dataviz-auth-client] Removed cookie: ${key}`);
+
   },
 };
 
@@ -192,7 +192,7 @@ async function initDatavizToolAuth() {
 
   // イベントリスナーをセットアップ
   supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log(`[dataviz-auth-client] Auth state changed: ${event}`, session?.user?.id);
+
 
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
       if (session) {
@@ -202,12 +202,12 @@ async function initDatavizToolAuth() {
         const searchParams = new URLSearchParams(window.location.search);
         if (searchParams.has("code") || hashParams.has("access_token")) {
           window.history.replaceState({}, document.title, window.location.pathname);
-          console.log("[dataviz-auth-client] URL cleaned after successful login.");
+
         }
 
         try {
           const me = await fetchUserProfile(session);
-          console.log("[dataviz-auth-client] /api/me result:", me);
+
           updateUiWithSubscriptionStatus(me);
         } catch (err) {
           console.error("[dataviz-auth-client] Profile fetch failed:", err);
@@ -233,7 +233,7 @@ async function initDatavizToolAuth() {
   if (!data.session) {
     await requireLogin(null);
   } else {
-    console.log("[dataviz-auth-client] Initial session found:", data.session.user.id);
+
     // ここでの処理は onAuthStateChange(INITIAL_SESSION) 側に任せても良いが、
     // 確実に走らせるためにここでも呼ぶか、awaitする設計にする
     // 今回は onAuthStateChange が走ることを期待して、ログだけ出す

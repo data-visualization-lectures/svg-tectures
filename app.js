@@ -560,7 +560,7 @@ function initializeEditor() {
         return;
     }
 
-    console.log('All libraries loaded. Initializing TextureEditor...');
+
     new TextureEditor();
 }
 
