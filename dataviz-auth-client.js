@@ -47,8 +47,8 @@ const cookieStorage = {
       // 名前が一致するかチェック
       if (k === key) {
         const rawVal = decodeURIComponent(rest.join("="));
-        // ★デバッグ: 生の値をログに出力して形式を確認する
-        console.log(`[dataviz-auth-client] RAW Cookie Value: ${rawVal.substring(0, 50)}... (len=${rawVal.length})`);
+        // ★デバッグ: 確実にログを出す
+        console.log(`[dataviz-auth-client] RAW Cookie Value (first 100 chars): ${rawVal.substring(0, 100)}`);
 
         // 1. Raw JSON check
         try {
@@ -56,19 +56,19 @@ const cookieStorage = {
           console.log(`[dataviz-auth-client] Cookie is raw JSON.`);
           return rawVal;
         } catch (e) {
-          console.log(`[dataviz-auth-client] Not raw JSON: ${e.message}`);
+          // console.log(`[dataviz-auth-client] Not raw JSON: ${e.message}`);
         }
 
         // 2. Base64 check
         try {
-          const decoded = atob(rawVal);
+          // URL Safe Base64対応: - -> +, _ -> /
+          const base64Standard = rawVal.replace(/-/g, '+').replace(/_/g, '/');
+          const decoded = atob(base64Standard);
           JSON.parse(decoded);
           console.log(`[dataviz-auth-client] Cookie is Base64 JSON.`);
           return decoded;
         } catch (e) {
           console.warn(`[dataviz-auth-client] Failed to parse cookie. Error: ${e.message}`);
-          // 万が一のために、戻り値をログに出してみる（個人情報注意だが今は開発中）
-          // console.log("Failed rawVal:", rawVal);
           return null;
         }
       }
