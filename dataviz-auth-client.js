@@ -1,71 +1,69 @@
 // dataviz-auth-client.js
 // ※ これは 2024 年頃の Supabase JS v2 の API 記憶にもとづく例です。
 
-// ---- 設定（あなたの環境に合わせて置き換え） ----
+// ---- 設定（あなたの環境に合わせて置き換え）// ---- 設定 ----
 const SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTA1NjgyMywiZXhwIjoyMDgwNjMyODIzfQ.vq7xTIU6-U6W7Bx6g8aagm64JNuxn4vTvAKZ0a-AcBc";
-const AUTH_APP_URL = "https://auth.dataviz.jp";
-const API_BASE_URL = "https://api.dataviz.jp";
-const DEBUG_PARAM = "auth_debug";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyMjI2MTIsImV4cCI6MjA0NTc5ODYxMn0.sV-Xf6wP_m46D_q-XN0oZfK9NogDqD9xV5sS-n6J8c4"; // 公開OKなAnon Key
+const API_BASE_URL = "https://api.dataviz.jp"; // ユーザープロファイルAPIなど
+const AUTH_APP_URL = "https://auth.dataviz.jp"; // ログイン画面
 
-// ---- クッキーでセッションを共有するためのストレージ実装 ----
-// localhost (またはIPアクセス) の場合はドメイン指定をしない (=カレントドメインのみ)
-// 本番 (.dataviz.jp) の場合はサブドメイン間で共有するためにドメインを指定する
+// ガイドに従った固定クッキー名
+const AUTH_COOKIE_NAME = "sb-dataviz-auth-token";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1年
+
+/**
+ * クッキー操作ヘルパー
+ * ガイド必須要件: Domain=.dataviz.jp, SameSite=None, Secure=true
+ */
 function getCookieDomain() {
   const hostname = window.location.hostname;
   if (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
-    hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/) // IP address check
+    hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)
   ) {
     console.log("[dataviz-auth-client] Running on localhost/IP. Cookie domain: (none)");
     return null;
   }
-  // 本番環境など
-  console.log("[dataviz-auth-client] Running on production. Cookie domain: .dataviz.jp");
   return ".dataviz.jp";
 }
 // スクリプト読み込み時に即座に環境判定ログを出す
 getCookieDomain();
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
-
 const cookieStorage = {
   getItem: (key) => {
+    // Supabase JSSDKはデフォルトのキー名で呼んでくるかもしれないが、
+    // ここではガイドで指定された AUTH_COOKIE_NAME を優先的に（あるいは強制的に）探すべき。
+    // ただし SDK 初期化時に storageKey を指定するので、key 引数は AUTH_COOKIE_NAME になるはず。
+    console.log(`[dataviz-auth-client] getItem called for key: ${key}`);
+
     const cookies = document.cookie
       .split(";")
       .map((c) => c.trim())
       .filter(Boolean);
+
     for (const c of cookies) {
       const [k, ...rest] = c.split("=");
+      // 名前が一致するかチェック
       if (k === key) {
-        // デコード前の生の値を保持（URLデコードは済ませておくのが安全だが、document.cookieは基本生）
-        // 一般的には decodeURIComponent が必要
         const rawVal = decodeURIComponent(rest.join("="));
-        console.log(`[dataviz-auth-client] Found cookie: ${key}, Raw length: ${rawVal.length}`);
+        // console.log(`[dataviz-auth-client] Found raw cookie value (len=${rawVal.length})`);
 
-        // 1. まずそのままJSONパースを試みる（サーバーがBase64してない場合）
+        // 1. Raw JSON check
         try {
           JSON.parse(rawVal);
-          console.log(`[dataviz-auth-client] Cookie is raw JSON. Using as is.`);
+          console.log(`[dataviz-auth-client] Cookie is raw JSON.`);
           return rawVal;
-        } catch (e) {
-          // JSONでなければ次へ
-        }
+        } catch (e) { }
 
-        // 2. Base64デコードを試みる（サーバーがBase64している場合）
+        // 2. Base64 check
         try {
           const decoded = atob(rawVal);
-          // デコード結果がJSONかチェック
           JSON.parse(decoded);
-          console.log(`[dataviz-auth-client] Cookie is Base64 encoded JSON. Digested.`);
+          console.log(`[dataviz-auth-client] Cookie is Base64 JSON.`);
           return decoded;
         } catch (e) {
-          console.warn(`[dataviz-auth-client] Failed to parse cookie ${key} as JSON or Base64-JSON.`, e);
-          // 3. 最後のあがき：もしかしたら「生トークン文字列」そのものかも？
-          // Supabase JS は JSON を期待するが、もし文字列ならそのまま返す手もあるが一旦null
-          // ログに中身を少し出してデバッグ
-          console.log(`[dataviz-auth-client] Invalid cookie content head: ${rawVal.substring(0, 20)}...`);
+          console.warn(`[dataviz-auth-client] Failed to parse cookie.`, e);
           return null;
         }
       }
@@ -74,17 +72,22 @@ const cookieStorage = {
     return null;
   },
   setItem: (key, value) => {
-    // console.log(`[dataviz-auth-client] setItem calling for ${key}. Value length: ${value.length}`);
+    // 書き込み時もガイドに準拠
     let encoded;
     try {
+      // Supabase JS は内部で JSON stringify して渡してくるので、
+      // ここで Base64化するかどうかはサーバー側と合わせる必要がある。
+      // 通常 cookie-storage アダプタはそのまま書き込むか、Base64するか。
+      // ★安全策として Base64 エンコードして書き込む（読み込み側が両対応したので安全）
       encoded = btoa(value);
     } catch (e) {
-      console.error(`[dataviz-auth-client] Failed to encode cookie value for ${key}`, e);
+      console.error(`[dataviz-auth-client] Encode failed`, e);
       return;
     }
 
     const domain = getCookieDomain();
-    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=Lax; Secure`;
+    // SameSite=None, Secure は必須
+    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
 
     if (domain) {
       cookieStr += `; Domain=${domain}`;
@@ -95,29 +98,24 @@ const cookieStorage = {
   },
   removeItem: (key) => {
     const domain = getCookieDomain();
-    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
-
+    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
     if (domain) {
       cookieStr += `; Domain=${domain}`;
     }
-
     document.cookie = cookieStr;
-    console.log(`[dataviz-auth-client] Remove cookie: ${key}`);
+    console.log(`[dataviz-auth-client] Removed cookie: ${key}`);
   },
 };
 
-function isAuthDebugMode() {
-  const params = new URLSearchParams(window.location.search);
-  return params.has(DEBUG_PARAM);
-}
-
-// ---- Supabase クライアント作成（CDN 版・cookie storage） ----
+// ---- Supabase クライアント作成 ----
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: cookieStorage,
+    storageKey: AUTH_COOKIE_NAME, // ★重要: これで getItem(AUTH_COOKIE_NAME) が呼ばれる
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true, // URLのcode等を自動検知
+    detectSessionInUrl: true,
+    // flowType: 'pkce' は削除済み（Implicit/Auto）
   },
 });
 
