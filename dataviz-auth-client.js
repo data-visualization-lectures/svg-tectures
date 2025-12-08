@@ -9,8 +9,25 @@ const API_BASE_URL = "https://api.dataviz.jp";
 const DEBUG_PARAM = "auth_debug";
 
 // ---- クッキーでセッションを共有するためのストレージ実装 ----
-const COOKIE_DOMAIN = ".dataviz.jp";
+// localhost (またはIPアクセス) の場合はドメイン指定をしない (=カレントドメインのみ)
+// 本番 (.dataviz.jp) の場合はサブドメイン間で共有するためにドメインを指定する
+function getCookieDomain() {
+  const hostname = window.location.hostname;
+  if (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/) // IP address check
+  ) {
+    console.log("[dataviz-auth-client] Running on localhost/IP. Cookie domain: (none)");
+    return null;
+  }
+  // 本番環境など
+  console.log("[dataviz-auth-client] Running on production. Cookie domain: .dataviz.jp");
+  return ".dataviz.jp";
+}
+
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+
 const cookieStorage = {
   getItem: (key) => {
     const cookies = document.cookie
@@ -20,19 +37,52 @@ const cookieStorage = {
     for (const c of cookies) {
       const [k, ...rest] = c.split("=");
       if (k === key) {
-        const val = decodeURIComponent(rest.join("="));
-        console.log("[dataviz-auth-client] cookieStorage.getItem hit", { key, val });
-        return val;
+        const val = rest.join("=");
+        try {
+          // Base64 decode
+          // JSON stringとして入っているはずなので、デコードしてそのまま返す
+          // (Supabase側で JSON.parse される)
+          return atob(val);
+        } catch (e) {
+          console.warn(`[dataviz-auth-client] Failed to decode cookie ${key}:`, e);
+          return null;
+        }
       }
     }
+    // console.log("[dataviz-auth-client] cookieStorage.getItem miss", { key });
     return null;
   },
   setItem: (key, value) => {
-    const encoded = encodeURIComponent(value);
-    document.cookie = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Domain=${COOKIE_DOMAIN}; Path=/; SameSite=Lax; Secure`;
+    // Base64 encode
+    // value は JSON string
+    let encoded;
+    try {
+      encoded = btoa(value);
+    } catch (e) {
+      console.error(`[dataviz-auth-client] Failed to encode cookie value for ${key}`, e);
+      return;
+    }
+
+    const domain = getCookieDomain();
+    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=Lax; Secure`;
+
+    if (domain) {
+      cookieStr += `; Domain=${domain}`;
+    }
+
+    document.cookie = cookieStr;
+    console.log(`[dataviz-auth-client] Set cookie: ${key} (Domain: ${domain || 'Current Host'})`);
   },
   removeItem: (key) => {
-    document.cookie = `${key}=; Max-Age=0; Domain=${COOKIE_DOMAIN}; Path=/; SameSite=Lax; Secure`;
+    const domain = getCookieDomain();
+    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
+
+    if (domain) {
+      cookieStr += `; Domain=${domain}`;
+    }
+
+    document.cookie = cookieStr;
+    console.log(`[dataviz-auth-client] Remove cookie: ${key}`);
   },
 };
 
