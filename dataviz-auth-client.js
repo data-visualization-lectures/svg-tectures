@@ -40,23 +40,22 @@ const cookieStorage = {
       const [k, ...rest] = c.split("=");
       if (k === key) {
         const val = rest.join("=");
+        // console.log(`[dataviz-auth-client] Raw cookie found for ${key}:`, val); // 非常に冗長になる可能性があるのでコメントアウト
         try {
-          // Base64 decode
-          // JSON stringとして入っているはずなので、デコードしてそのまま返す
-          // (Supabase側で JSON.parse される)
-          return atob(val);
+          const decoded = atob(val);
+          // console.log(`[dataviz-auth-client] Decoded cookie ${key}:`, decoded.substring(0, 20) + "..."); 
+          return decoded;
         } catch (e) {
           console.warn(`[dataviz-auth-client] Failed to decode cookie ${key}:`, e);
           return null;
         }
       }
     }
-    // console.log("[dataviz-auth-client] cookieStorage.getItem miss", { key });
+    console.log(`[dataviz-auth-client] Cookie not found: ${key}`);
     return null;
   },
   setItem: (key, value) => {
-    // Base64 encode
-    // value は JSON string
+    // console.log(`[dataviz-auth-client] setItem calling for ${key}. Value length: ${value.length}`);
     let encoded;
     try {
       encoded = btoa(value);
@@ -99,72 +98,23 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storage: cookieStorage,
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: true, // URLのcode等を自動検知
   },
 });
 
-// ---- セッション取得 ----
-async function getSession() {
-  console.log("[dataviz-auth-client] getSession start. href:", window.location.href);
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.error("getSession error", error);
-    return null;
-  }
-  console.log("[dataviz-auth-client] getSession result:", data);
-  return data.session ?? null;
-}
-
-// ---- リダイレクト後のURLハッシュからセッションを復元 ----
-async function recoverSessionFromUrl() {
-  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  const searchParams = new URLSearchParams(window.location.search);
-
-  const hasSupabaseParams =
-    hashParams.has("access_token") ||
-    hashParams.has("refresh_token") ||
-    hashParams.has("code") ||
-    searchParams.has("code") ||
-    searchParams.has("access_token");
-
-  if (!hasSupabaseParams) return null;
-
-  // hash / query のどちらでも拾えるように url を明示指定
-  const { data, error } = await supabase.auth.getSessionFromUrl({
-    storeSession: true,
-    url: window.location.href,
-  });
-  if (error) {
-    console.error("getSessionFromUrl error", error);
-    return null;
-  }
-
-  // ハッシュ・クエリは不要なので消す（同一ページでの再読込ループを防ぐ）
-  window.history.replaceState({}, document.title, window.location.pathname);
-  console.log("[dataviz-auth-client] session recovered from url", data);
-  return data.session ?? null;
-}
-
 // ---- 未ログインなら auth.dataviz.jp へ飛ばす ----
-async function requireLogin() {
-  // リダイレクト直後にハッシュからセッションを取り込む
-  await recoverSessionFromUrl();
+async function requireLogin(session) {
+  if (session) return session;
 
-  const session = await getSession();
-  if (!session) {
-    console.log("[dataviz-auth-client] session missing. cookies now:", document.cookie);
-  }
-  if (!session) {
-    if (isAuthDebugMode()) {
-      console.warn("[dataviz-auth-client] debug mode: redirect suppressed");
-      return null;
-    }
-    const redirectTo = encodeURIComponent(window.location.href);
-    // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
-    window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
+  if (isAuthDebugMode()) {
+    console.warn("[dataviz-auth-client] debug mode: redirect suppressed");
     return null;
   }
-  return session;
+
+  const redirectTo = encodeURIComponent(window.location.href);
+  // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
+  window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
+  return null;
 }
 
 // ---- api.dataviz.jp から /api/me を取得 ----
@@ -209,20 +159,53 @@ async function initDatavizToolAuth() {
   // 環境判定ログを表示するために実行
   getCookieDomain();
 
-  try {
-    const session = await requireLogin();
-    if (!session) return; // サインイン画面へ飛んだ
+  // イベントリスナーをセットアップ
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log(`[dataviz-auth-client] Auth state changed: ${event}`, session?.user?.id);
 
-    const me = await fetchUserProfile(session);
-    console.log("[dataviz-auth-client] /api/me result:", me);
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+      if (session) {
+        // URLパラメータの掃除はSDKがやってくれない場合があるので、ここで一応ケア
+        // ただしSDKの処理完了前にやると壊れるので、sessionがある場合のみ
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.has("code") || hashParams.has("access_token")) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          console.log("[dataviz-auth-client] URL cleaned after successful login.");
+        }
 
-    updateUiWithSubscriptionStatus(me);
-  } catch (err) {
-    console.error("[dataviz-auth-client] init error", err);
-    const statusEl = document.getElementById("subscription-status");
-    if (statusEl) {
-      statusEl.textContent = "エラー";
+        try {
+          const me = await fetchUserProfile(session);
+          console.log("[dataviz-auth-client] /api/me result:", me);
+          updateUiWithSubscriptionStatus(me);
+        } catch (err) {
+          console.error("[dataviz-auth-client] Profile fetch failed:", err);
+        }
+      }
+    } else if (event === 'SIGNED_OUT') {
+      // ログアウト時の処理
+      updateUiWithSubscriptionStatus({ subscription: { status: 'none' } });
+      // 必要ならリダイレクト
+      await requireLogin(null);
     }
+  });
+
+  // 初期セッションチェック
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    console.error("[dataviz-auth-client] Initial getSession error:", error);
+  }
+
+  // セッションがなければログインへ誘導
+  // ※ onAuthStateChangeで INITIAL_SESSION が来ることもあるが、
+  //   未ログイン時はイベントが来ないまま終わることもあるので明示的にチェック
+  if (!data.session) {
+    await requireLogin(null);
+  } else {
+    console.log("[dataviz-auth-client] Initial session found:", data.session.user.id);
+    // ここでの処理は onAuthStateChange(INITIAL_SESSION) 側に任せても良いが、
+    // 確実に走らせるためにここでも呼ぶか、awaitする設計にする
+    // 今回は onAuthStateChange が走ることを期待して、ログだけ出す
   }
 }
 
