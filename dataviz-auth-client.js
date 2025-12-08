@@ -25,6 +25,8 @@ function getCookieDomain() {
   console.log("[dataviz-auth-client] Running on production. Cookie domain: .dataviz.jp");
   return ".dataviz.jp";
 }
+// スクリプト読み込み時に即座に環境判定ログを出す
+getCookieDomain();
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
@@ -204,6 +206,9 @@ function updateUiWithSubscriptionStatus(me) {
 
 // ---- エントリーポイント ----
 async function initDatavizToolAuth() {
+  // 環境判定ログを表示するために実行
+  getCookieDomain();
+
   try {
     const session = await requireLogin();
     if (!session) return; // サインイン画面へ飛んだ
