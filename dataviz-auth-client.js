@@ -125,24 +125,62 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+// ---- 認証・認可チェック & リダイレクト集約ロジック ----
+
 function isAuthDebugMode() {
   const params = new URLSearchParams(window.location.search);
   return params.has("auth_debug");
 }
 
-// ---- 未ログインなら auth.dataviz.jp へ飛ばす ----
-async function requireLogin(session) {
-  if (session) return session;
-
+/**
+ * 実際にリダイレクトを行う（デバッグモードならログ出力のみ）
+ */
+function performRedirect(url, reason) {
   if (isAuthDebugMode()) {
-    console.warn("[dataviz-auth-client] debug mode: redirect suppressed");
+    console.warn(`[dataviz-auth-client] Redirect suppressed (Debug Mode). Reason: ${reason}, Target: ${url}`);
+    return;
+  }
+  window.location.href = url;
+}
+
+/**
+ * ユーザーのアクセス権を検証し、必要に応じてリダイレクトする
+ * @param {Object|null} session - Supabaseセッション
+ * @returns {Promise<Object|null>} アクセスOKならUserProfileオブジェクト、NGならnull
+ */
+async function verifyUserAccess(session) {
+  // 1. 未ログインチェック
+  if (!session) {
+    const redirectTo = encodeURIComponent(window.location.href);
+    const signUpUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
+    performRedirect(signUpUrl, 'Unauthenticated');
     return null;
   }
 
-  const redirectTo = encodeURIComponent(window.location.href);
-  // auth.dataviz.jp 側で redirectTo を受け取って /account から戻す実装をしてある前提
-  window.location.href = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
-  return null;
+  // 2. プロファイル取得
+  let userProfile = null;
+  try {
+    userProfile = await fetchUserProfile(session);
+  } catch (err) {
+    console.error("[dataviz-auth-client] Failed to fetch user profile", err);
+    // プロファイルが取れない場合どうするか？
+    // 一旦エラーとして扱うか、リトライを促すか。ここでは安全側に倒してリダイレクトせず、UIでエラー表示などが望ましいかもしれないが、
+    // 既存動作に合わせて特段リダイレクトはしない（あるいはログインし直しを促す）
+    // 今回はサブスク判定ができないため、アクセスNGとして扱うのが安全。
+    performRedirect(AUTH_APP_URL, 'Profile Fetch Error');
+    return null;
+  }
+
+  // 3. サブスクリプション状態チェック
+  const status = userProfile.subscription?.status || "none";
+  const isActive = status === "active" || status === "trialing";
+
+  if (!isActive) {
+    performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
+    return null;
+  }
+
+  return userProfile;
 }
 
 // ---- api.dataviz.jp から /api/me を取得 ----
@@ -157,16 +195,16 @@ async function fetchUserProfile(session) {
   });
 
   if (!res.ok) {
-    console.error("GET /api/me failed", res.status);
-    throw new Error("api_me_failed");
+    throw new Error(`GET /api/me failed status=${res.status}`);
   }
 
   return await res.json();
 }
 
-// ---- UI 更新ロジック（テスト用） ----
+// ---- UI 更新ロジック（UI操作のみに専念） ----
 function updateUiWithSubscriptionStatus(me) {
-  const status = me.subscription?.status || "none";
+  // me が null の場合（ログアウト時など）は 'none' 扱い
+  const status = me?.subscription?.status || "none";
 
   const statusEl = document.getElementById("subscription-status");
   if (statusEl) {
@@ -176,75 +214,53 @@ function updateUiWithSubscriptionStatus(me) {
   const paidEl = document.getElementById("paid-feature");
   const upgradeEl = document.getElementById("upgrade-message");
 
-  const isActive = status === "active" || status === "trialing"; // 運用に合わせて
+  const isActive = status === "active" || status === "trialing";
 
   if (paidEl) paidEl.style.display = isActive ? "block" : "none";
   if (upgradeEl) upgradeEl.style.display = isActive ? "none" : "block";
-
-  // サブスクリプションが有効でない場合はリダイレクト
-  if (!isActive) {
-    if (isAuthDebugMode()) {
-      console.warn(`[dataviz-auth-client] Subscription status is '${status}' (not active). Redirect suppressed due to debug mode.`);
-    } else {
-      // ループ防止のため redirect_to はあえて付けずにアカウントページ（ログインページ）へ遷移させる
-      window.location.href = AUTH_APP_URL;
-    }
-  }
 }
 
 // ---- エントリーポイント ----
 async function initDatavizToolAuth() {
-  // 環境判定ログを表示するために実行
-  getCookieDomain();
+  getCookieDomain(); // 環境ログ用
 
-  // イベントリスナーをセットアップ
+  // イベントリスナー
   supabase.auth.onAuthStateChange(async (event, session) => {
-
+    // console.log(`[Auth] ${event}`, session?.user?.id);
 
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
       if (session) {
-        // URLパラメータの掃除はSDKがやってくれない場合があるので、ここで一応ケア
-        // ただしSDKの処理完了前にやると壊れるので、sessionがある場合のみ
+        // URLパラメータ掃除
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
         const searchParams = new URLSearchParams(window.location.search);
         if (searchParams.has("code") || hashParams.has("access_token")) {
           window.history.replaceState({}, document.title, window.location.pathname);
-
         }
 
-        try {
-          const me = await fetchUserProfile(session);
-
-          updateUiWithSubscriptionStatus(me);
-        } catch (err) {
-          console.error("[dataviz-auth-client] Profile fetch failed:", err);
+        // アクセス権検証 & UI更新
+        const profile = await verifyUserAccess(session);
+        if (profile) {
+          updateUiWithSubscriptionStatus(profile);
         }
       }
     } else if (event === 'SIGNED_OUT') {
-      // ログアウト時の処理
-      updateUiWithSubscriptionStatus({ subscription: { status: 'none' } });
-      // 必要ならリダイレクト
-      await requireLogin(null);
+      // ログアウト時
+      updateUiWithSubscriptionStatus(null);
+      // 未ログイン状態として検証（リダイレクト発動）
+      await verifyUserAccess(null);
     }
   });
 
-  // 初期セッションチェック
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.error("[dataviz-auth-client] Initial getSession error:", error);
-  }
-
-  // セッションがなければログインへ誘導
-  // ※ onAuthStateChangeで INITIAL_SESSION が来ることもあるが、
-  //   未ログイン時はイベントが来ないまま終わることもあるので明示的にチェック
+  // 初期ロード時のチェック
+  // onAuthStateChange(INITIAL_SESSION) が発火するはずだが、
+  // 発火しないケース（既にチェック済み、あるいはタイミング問題）や、
+  // 未ログインでセッションが無い場合はイベントが来ない可能性があるため明示的にチェックする。
+  const { data } = await supabase.auth.getSession();
   if (!data.session) {
-    await requireLogin(null);
-  } else {
-
-    // ここでの処理は onAuthStateChange(INITIAL_SESSION) 側に任せても良いが、
-    // 確実に走らせるためにここでも呼ぶか、awaitする設計にする
-    // 今回は onAuthStateChange が走ることを期待して、ログだけ出す
+    // セッションがない場合 -> 未ログインとして処理
+    await verifyUserAccess(null);
   }
+  // セッションがある場合は INITIAL_SESSION イベント側で verifyUserAccess が走るのを待つ
 }
 
 // ページ読み込み後に実行
