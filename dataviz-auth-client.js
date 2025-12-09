@@ -224,43 +224,56 @@ function updateUiWithSubscriptionStatus(me) {
 async function initDatavizToolAuth() {
   getCookieDomain(); // 環境ログ用
 
+  let isInitialCheckDone = false;
+
+  // 共通のセッション処理ロジック
+  const processSession = async (session) => {
+    if (session) {
+      // URLパラメータ掃除
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has("code") || hashParams.has("access_token")) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      // アクセス権検証 & UI更新
+      const profile = await verifyUserAccess(session);
+      if (profile) {
+        updateUiWithSubscriptionStatus(profile);
+      }
+    } else {
+      // セッションなし（ログアウト含む）
+      updateUiWithSubscriptionStatus(null);
+      await verifyUserAccess(null); // リダイレクト発動
+    }
+  };
+
   // イベントリスナー
   supabase.auth.onAuthStateChange(async (event, session) => {
     // console.log(`[Auth] ${event}`, session?.user?.id);
 
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-      if (session) {
-        // URLパラメータ掃除
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        const searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.has("code") || hashParams.has("access_token")) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-
-        // アクセス権検証 & UI更新
-        const profile = await verifyUserAccess(session);
-        if (profile) {
-          updateUiWithSubscriptionStatus(profile);
-        }
-      }
+    if (event === 'INITIAL_SESSION') {
+      // 既に手動チェック等で完了していればスキップ（競合回避）
+      if (isInitialCheckDone) return;
+      isInitialCheckDone = true;
+      await processSession(session);
+    } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      // ログイン操作やトークン更新時は常に実行
+      await processSession(session);
     } else if (event === 'SIGNED_OUT') {
-      // ログアウト時
-      updateUiWithSubscriptionStatus(null);
-      // 未ログイン状態として検証（リダイレクト発動）
-      await verifyUserAccess(null);
+      await processSession(null);
     }
   });
 
-  // 初期ロード時のチェック
-  // onAuthStateChange(INITIAL_SESSION) が発火するはずだが、
-  // 発火しないケース（既にチェック済み、あるいはタイミング問題）や、
-  // 未ログインでセッションが無い場合はイベントが来ない可能性があるため明示的にチェックする。
+  // 初期ロード時の手動チェック（フォールバック）
+  // INITIAL_SESSION が発火しないケースや遅延への対策
   const { data } = await supabase.auth.getSession();
-  if (!data.session) {
-    // セッションがない場合 -> 未ログインとして処理
-    await verifyUserAccess(null);
+
+  if (!isInitialCheckDone) {
+    // まだイベント経由の処理が走っていなければここで実行
+    isInitialCheckDone = true;
+    await processSession(data.session);
   }
-  // セッションがある場合は INITIAL_SESSION イベント側で verifyUserAccess が走るのを待つ
 }
 
 // ページ読み込み後に実行
