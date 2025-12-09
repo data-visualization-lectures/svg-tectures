@@ -141,9 +141,6 @@ class DatavizGlobalHeader {
         color: #aaa;
       }
       .dv-user-email {
-        max-width: 150px;
-        overflow: hidden;
-        text-overflow: ellipsis;
         white-space: nowrap;
       }
       .dv-btn {
@@ -213,7 +210,7 @@ class DatavizGlobalHeader {
       <style>${this.getStyles()}</style>
       <div class="dv-header">
         <div class="dv-left">
-          <a href="${AUTH_APP_URL}" class="dv-brand">DataViz.jp</a>
+          <a href="${AUTH_APP_URL}" class="dv-brand">dataviz.jp</a>
         </div>
         <div class="dv-right">
           ${rightContent}
