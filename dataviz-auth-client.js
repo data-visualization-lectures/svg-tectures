@@ -12,20 +12,21 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1年
  * クッキー操作ヘルパー
  * ガイド必須要件: Domain=.dataviz.jp, SameSite=None, Secure=true
  */
-function getCookieDomain() {
+/**
+ * クッキー操作ヘルパー
+ * ガイド必須要件: Domain=.dataviz.jp, SameSite=None, Secure=true
+ */
+const COOKIE_DOMAIN = (() => {
   const hostname = window.location.hostname;
   if (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
     hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)
   ) {
-
     return null;
   }
   return ".dataviz.jp";
-}
-// スクリプト読み込み時に即座に環境判定ログを出す
-getCookieDomain();
+})();
 
 const cookieStorage = {
   getItem: (key) => {
@@ -91,22 +92,20 @@ const cookieStorage = {
       return;
     }
 
-    const domain = getCookieDomain();
     // SameSite=None, Secure は必須
     let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
 
-    if (domain) {
-      cookieStr += `; Domain=${domain}`;
+    if (COOKIE_DOMAIN) {
+      cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     }
 
     document.cookie = cookieStr;
 
   },
   removeItem: (key) => {
-    const domain = getCookieDomain();
     let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
-    if (domain) {
-      cookieStr += `; Domain=${domain}`;
+    if (COOKIE_DOMAIN) {
+      cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     }
     document.cookie = cookieStr;
 
@@ -114,7 +113,7 @@ const cookieStorage = {
 };
 
 // ---- Supabase クライアント作成 ----
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: cookieStorage,
     storageKey: AUTH_COOKIE_NAME, // ★重要: これで getItem(AUTH_COOKIE_NAME) が呼ばれる
@@ -123,7 +122,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: true,
     // flowType: 'pkce' は削除済み（Implicit/Auto）
   },
-});
+}) : null;
 
 // ---- 認証・認可チェック & リダイレクト集約ロジック ----
 
@@ -222,7 +221,10 @@ function updateUiWithSubscriptionStatus(me) {
 
 // ---- エントリーポイント ----
 async function initDatavizToolAuth() {
-  getCookieDomain(); // 環境ログ用
+  if (!supabase) {
+    console.error("[dataviz-auth-client] Supabase client not initialized. Check window.supabase loading.");
+    return;
+  }
 
   let isInitialCheckDone = false;
 
