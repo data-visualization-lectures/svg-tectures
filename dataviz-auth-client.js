@@ -10,11 +10,6 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1年
 
 /**
  * クッキー操作ヘルパー
- * ガイド必須要件: Domain=.dataviz.jp, SameSite=None, Secure=true
- */
-/**
- * クッキー操作ヘルパー
- * ガイド必須要件: Domain=.dataviz.jp, SameSite=None, Secure=true
  */
 const COOKIE_DOMAIN = (() => {
   const hostname = window.location.hostname;
@@ -30,11 +25,6 @@ const COOKIE_DOMAIN = (() => {
 
 const cookieStorage = {
   getItem: (key) => {
-    // Supabase JSSDKはデフォルトのキー名で呼んでくるかもしれないが、
-    // ここではガイドで指定された AUTH_COOKIE_NAME を優先的に（あるいは強制的に）探すべき。
-    // ただし SDK 初期化時に storageKey を指定するので、key 引数は AUTH_COOKIE_NAME になるはず。
-
-
     const cookies = document.cookie
       .split(";")
       .map((c) => c.trim())
@@ -42,73 +32,29 @@ const cookieStorage = {
 
     for (const c of cookies) {
       const [k, ...rest] = c.split("=");
-      // 名前が一致するかチェック
       if (k === key) {
         const rawVal = decodeURIComponent(rest.join("="));
-
-        // 1. Raw JSON check
+        try { return JSON.parse(rawVal); } catch (e) { }
         try {
-          JSON.parse(rawVal);
-
-          return rawVal;
-        } catch (e) {
-          // Not raw JSON
-        }
-
-        // 2. Base64 check
-        try {
-          // Supabase SSR (v2-rcなど) は 'base64-' プレフィックスを付けることがある
-          let toDecode = rawVal;
-          if (toDecode.startsWith('base64-')) {
-            toDecode = toDecode.slice('base64-'.length);
-          }
-
-          // URL Safe Base64対応: - -> +, _ -> /
+          let toDecode = rawVal.startsWith('base64-') ? rawVal.slice(7) : rawVal;
           const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
-          const decoded = atob(base64Standard);
-          JSON.parse(decoded);
-
-          return decoded;
-        } catch (e) {
-          console.warn(`[dataviz-auth-client] Failed to parse cookie: ${key}`);
-          return null;
-        }
+          return JSON.parse(atob(base64Standard));
+        } catch (e) { return null; }
       }
     }
-
     return null;
   },
   setItem: (key, value) => {
-    // 書き込み時もガイドに準拠
     let encoded;
-    try {
-      // Supabase JS は内部で JSON stringify して渡してくるので、
-      // ここで Base64化するかどうかはサーバー側と合わせる必要がある。
-      // 通常 cookie-storage アダプタはそのまま書き込むか、Base64するか。
-      // ★安全策として Base64 エンコードして書き込む（読み込み側が両対応したので安全）
-      encoded = btoa(value);
-    } catch (e) {
-      console.error(`[dataviz-auth-client] Encode failed`, e);
-      return;
-    }
-
-    // SameSite=None, Secure は必須
+    try { encoded = btoa(value); } catch (e) { return; }
     let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
-
-    if (COOKIE_DOMAIN) {
-      cookieStr += `; Domain=${COOKIE_DOMAIN}`;
-    }
-
+    if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     document.cookie = cookieStr;
-
   },
   removeItem: (key) => {
     let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
-    if (COOKIE_DOMAIN) {
-      cookieStr += `; Domain=${COOKIE_DOMAIN}`;
-    }
+    if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     document.cookie = cookieStr;
-
   },
 };
 
@@ -116,39 +62,201 @@ const cookieStorage = {
 const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: cookieStorage,
-    storageKey: AUTH_COOKIE_NAME, // ★重要: これで getItem(AUTH_COOKIE_NAME) が呼ばれる
+    storageKey: AUTH_COOKIE_NAME,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    // flowType: 'pkce' は削除済み（Implicit/Auto）
   },
 }) : null;
 
-// ---- 認証・認可チェック & リダイレクト集約ロジック ----
+
+// =========================================================================
+// UI Component: 共通ヘッダー (Shadow DOM使用)
+// =========================================================================
+class DatavizGlobalHeader {
+  constructor() {
+    this.host = document.createElement('div');
+    this.host.id = 'dataviz-global-header-host';
+    this.shadow = this.host.attachShadow({ mode: 'open' });
+    this.state = {
+      isLoading: true,
+      user: null
+    };
+  }
+
+  mount() {
+    // 既存のものがあれば削除（二重防止）
+    const existing = document.getElementById('dataviz-global-header-host');
+    if (existing) existing.remove();
+    document.body.prepend(this.host);
+    this.render();
+  }
+
+  update(newState) {
+    this.state = { ...this.state, ...newState };
+    this.render();
+  }
+
+  // スタイル定義
+  getStyles() {
+    return `
+      :host {
+        all: initial; /* 親スタイルの影響をリセット */
+        display: block;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        z-index: 99999;
+        position: relative;
+      }
+      .dv-header {
+        background-color: #111;
+        color: #ddd;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        font-size: 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      }
+      .dv-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .dv-brand {
+        font-weight: 700;
+        color: #fff;
+        text-decoration: none;
+        letter-spacing: 0.5px;
+      }
+      .dv-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .dv-user-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #aaa;
+      }
+      .dv-user-email {
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dv-btn {
+        background: transparent;
+        border: 1px solid #444;
+        color: #eee;
+        padding: 4px 10px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s, border-color 0.2s;
+      }
+      .dv-btn:hover {
+        background: #333;
+        border-color: #666;
+        color: #fff;
+      }
+      .dv-btn-primary {
+        background: #eee;
+        color: #111;
+        border-color: #eee;
+        font-weight: 600;
+      }
+      .dv-btn-primary:hover {
+        background: #fff;
+        color: #000;
+      }
+      .dv-loading {
+        opacity: 0.5;
+        font-size: 12px;
+      }
+      /* Mobile Optimizations */
+      @media (max-width: 600px) {
+        .dv-user-email { display: none; }
+      }
+    `;
+  }
+
+  render() {
+    const { isLoading, user } = this.state;
+
+    // アカウントページのURL
+    const accountUrl = `${AUTH_APP_URL}`; // ダッシュボードへ
+    const loginUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${encodeURIComponent(window.location.href)}`;
+
+    let rightContent = '';
+
+    if (isLoading) {
+      rightContent = `<span class="dv-loading">Loading...</span>`;
+    } else if (user) {
+      const email = user.email || 'User';
+      rightContent = `
+        <div class="dv-user-info">
+          <span class="dv-user-email" title="${email}">${email}</span>
+        </div>
+        <button class="dv-btn" id="dv-logout-btn">Log out</button>
+      `;
+    } else {
+      rightContent = `
+        <span style="font-size:12px; color:#888;">Not logged in</span>
+        <a href="${loginUrl}" class="dv-btn dv-btn-primary">Log in</a>
+      `;
+    }
+
+    this.shadow.innerHTML = `
+      <style>${this.getStyles()}</style>
+      <div class="dv-header">
+        <div class="dv-left">
+          <a href="${AUTH_APP_URL}" class="dv-brand">DataViz.jp</a>
+        </div>
+        <div class="dv-right">
+          ${rightContent}
+        </div>
+      </div>
+    `;
+
+    // イベントリスナーの再結合 (Shadow DOM再描画後)
+    const logoutBtn = this.shadow.getElementById('dv-logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        if (confirm('ログアウトしますか？')) {
+          await supabase.auth.signOut();
+          window.location.reload();
+        }
+      });
+    }
+  }
+}
+
+
+// =========================================================================
+// Logic: 認証・認可ロジック
+// =========================================================================
 
 function isAuthDebugMode() {
   const params = new URLSearchParams(window.location.search);
   return params.has("auth_debug");
 }
 
-/**
- * 実際にリダイレクトを行う（デバッグモードならログ出力のみ）
- */
 function performRedirect(url, reason) {
   if (isAuthDebugMode()) {
-    console.warn(`[dataviz-auth-client] Redirect suppressed (Debug Mode). Reason: ${reason}, Target: ${url}`);
+    console.warn(`[dataviz-auth-client] Redirect suppressed. Reason: ${reason} -> ${url}`);
     return;
   }
   window.location.href = url;
 }
 
 /**
- * ユーザーのアクセス権を検証し、必要に応じてリダイレクトする
- * @param {Object|null} session - Supabaseセッション
- * @returns {Promise<Object|null>} アクセスOKならUserProfileオブジェクト、NGならnull
+ * ユーザー状態検証
+ * @returns UserProfile object OR null (if unauthenticated/invalid)
  */
 async function verifyUserAccess(session) {
-  // 1. 未ログインチェック
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
     const signUpUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
@@ -156,129 +264,106 @@ async function verifyUserAccess(session) {
     return null;
   }
 
-  // 2. プロファイル取得
-  let userProfile = null;
   try {
-    userProfile = await fetchUserProfile(session);
+    const res = await fetch(`${API_BASE_URL}/api/me`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      credentials: "include", // Cookie送信
+    });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+
+    const profile = await res.json();
+
+    // サブスクチェック
+    const status = profile.subscription?.status || "none";
+    const isActive = status === "active" || status === "trialing";
+
+    if (!isActive) {
+      performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
+      return null;
+    }
+
+    // ユーザー情報にemailが含まれていない場合があるので、Sessionからマージ
+    return { ...profile, email: session.user.email };
+
   } catch (err) {
-    console.error("[dataviz-auth-client] Failed to fetch user profile", err);
-    // プロファイルが取れない場合どうするか？
-    // 一旦エラーとして扱うか、リトライを促すか。ここでは安全側に倒してリダイレクトせず、UIでエラー表示などが望ましいかもしれないが、
-    // 既存動作に合わせて特段リダイレクトはしない（あるいはログインし直しを促す）
-    // 今回はサブスク判定ができないため、アクセスNGとして扱うのが安全。
-    performRedirect(AUTH_APP_URL, 'Profile Fetch Error');
+    console.error("[dataviz-auth-client] Profile check failed", err);
+    performRedirect(AUTH_APP_URL, 'Profile Error');
     return null;
   }
-
-  // 3. サブスクリプション状態チェック
-  const status = userProfile.subscription?.status || "none";
-  const isActive = status === "active" || status === "trialing";
-
-  if (!isActive) {
-    performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
-    return null;
-  }
-
-  return userProfile;
 }
 
-// ---- api.dataviz.jp から /api/me を取得 ----
-async function fetchUserProfile(session) {
-  const res = await fetch(`${API_BASE_URL}/api/me`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    // クッキーを使わない構成なら omit でもいいが、現状は include でも問題ないはず
-    credentials: "include",
-  });
 
-  if (!res.ok) {
-    throw new Error(`GET /api/me failed status=${res.status}`);
-  }
+// =========================================================================
+// Controller: メイン処理 (変更なしのエントリーポイント名)
+// =========================================================================
 
-  return await res.json();
-}
-
-// ---- UI 更新ロジック（UI操作のみに専念） ----
-function updateUiWithSubscriptionStatus(me) {
-  // me が null の場合（ログアウト時など）は 'none' 扱い
-  const status = me?.subscription?.status || "none";
-
-  const statusEl = document.getElementById("subscription-status");
-  if (statusEl) {
-    statusEl.textContent = status;
-  }
-
-  const paidEl = document.getElementById("paid-feature");
-  const upgradeEl = document.getElementById("upgrade-message");
-
-  const isActive = status === "active" || status === "trialing";
-
-  if (paidEl) paidEl.style.display = isActive ? "block" : "none";
-  if (upgradeEl) upgradeEl.style.display = isActive ? "none" : "block";
-}
-
-// ---- エントリーポイント ----
 async function initDatavizToolAuth() {
   if (!supabase) {
-    console.error("[dataviz-auth-client] Supabase client not initialized. Check window.supabase loading.");
+    console.error("[dataviz-auth-client] Supabase client missing.");
     return;
   }
 
-  let isInitialCheckDone = false;
+  // 1. UIの初期化・表示
+  const headerUI = new DatavizGlobalHeader();
+  // DOMContentLoadedを待つ
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => headerUI.mount());
+  } else {
+    headerUI.mount();
+  }
 
-  // 共通のセッション処理ロジック
-  const processSession = async (session) => {
-    if (session) {
-      // URLパラメータ掃除
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.has("code") || hashParams.has("access_token")) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
+  let isCheckDone = false;
 
-      // アクセス権検証 & UI更新
-      const profile = await verifyUserAccess(session);
-      if (profile) {
-        updateUiWithSubscriptionStatus(profile);
-      }
-    } else {
-      // セッションなし（ログアウト含む）
-      updateUiWithSubscriptionStatus(null);
-      await verifyUserAccess(null); // リダイレクト発動
+  const handleSession = async (session) => {
+    // UIをローディング状態に
+    // headerUI.update({ isLoading: true }); // チラつき防止のためここでのローディング表示は慎重に
+
+    // URLパラメータ掃除
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.has("code") || hashParams.has("access_token")) {
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
+
+    if (!session) {
+      // 未ログイン
+      headerUI.update({ isLoading: false, user: null });
+      await verifyUserAccess(null); // リダイレクト実行
+      return;
+    }
+
+    // ログイン済み -> 権限チェック
+    const profile = await verifyUserAccess(session);
+    if (profile) {
+      // 成功 -> UI更新
+      headerUI.update({ isLoading: false, user: profile });
+    }
+    // 失敗時は verifyUserAccess 内でリダイレクトされる
   };
 
-  // イベントリスナー
+  // Authイベント監視
   supabase.auth.onAuthStateChange(async (event, session) => {
-    // console.log(`[Auth] ${event}`, session?.user?.id);
-
     if (event === 'INITIAL_SESSION') {
-      // 既に手動チェック等で完了していればスキップ（競合回避）
-      if (isInitialCheckDone) return;
-      isInitialCheckDone = true;
-      await processSession(session);
-    } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      // ログイン操作やトークン更新時は常に実行
-      await processSession(session);
-    } else if (event === 'SIGNED_OUT') {
-      await processSession(null);
+      if (isCheckDone) return;
+      isCheckDone = true;
+      await handleSession(session);
+    }
+    else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      await handleSession(session);
+    }
+    else if (event === 'SIGNED_OUT') {
+      await handleSession(null);
     }
   });
 
-  // 初期ロード時の手動チェック（フォールバック）
-  // INITIAL_SESSION が発火しないケースや遅延への対策
+  // フォールバックチェック
   const { data } = await supabase.auth.getSession();
-
-  if (!isInitialCheckDone) {
-    // まだイベント経由の処理が走っていなければここで実行
-    isInitialCheckDone = true;
-    await processSession(data.session);
+  if (!isCheckDone) {
+    isCheckDone = true;
+    await handleSession(data.session);
   }
 }
 
-// ページ読み込み後に実行
-document.addEventListener("DOMContentLoaded", () => {
-  initDatavizToolAuth();
-});
+// 自動実行
+initDatavizToolAuth();
