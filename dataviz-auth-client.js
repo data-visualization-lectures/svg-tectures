@@ -142,6 +142,13 @@ class DatavizGlobalHeader {
       }
       .dv-user-email {
         white-space: nowrap;
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .dv-user-email:hover {
+        color: #fff;
+        text-decoration: underline;
       }
       .dv-btn {
         background: transparent;
@@ -184,7 +191,7 @@ class DatavizGlobalHeader {
     const { isLoading, user } = this.state;
 
     // アカウントページのURL
-    const accountUrl = `${AUTH_APP_URL}`; // ダッシュボードへ
+    const accountUrl = `${AUTH_APP_URL}/account`;
     const loginUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${encodeURIComponent(window.location.href)}`;
 
     let rightContent = '';
@@ -195,7 +202,7 @@ class DatavizGlobalHeader {
       const email = user.email || 'User';
       rightContent = `
         <div class="dv-user-info">
-          <span class="dv-user-email" title="${email}">${email}</span>
+          <a href="${accountUrl}" class="dv-user-email" title="${email}">${email}</a>
         </div>
         <button class="dv-btn" id="dv-logout-btn">Log out</button>
       `;
