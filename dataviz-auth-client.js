@@ -279,8 +279,13 @@ async function verifyUserAccess(session) {
     const profile = await res.json();
 
     // サブスクチェック
-    const status = profile.subscription?.status || "none";
-    const isActive = status === "active" || status === "trialing";
+    const sub = profile.subscription || {};
+    const status = sub.status || "none";
+
+    // 「キャンセル済みだが期間内」は cancel_at_period_end で判断
+    const isCanceledButValid = sub.cancel_at_period_end;
+
+    const isActive = status === "active" || status === "trialing" || isCanceledButValid;
 
     if (!isActive) {
       performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
