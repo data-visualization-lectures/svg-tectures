@@ -25,6 +25,7 @@ const COOKIE_DOMAIN = (() => {
 
 const cookieStorage = {
   getItem: (key) => {
+    // console.log("[AuthDebug] Lookup key:", key);
     const cookies = document.cookie
       .split(";")
       .map((c) => c.trim())
@@ -45,31 +46,47 @@ const cookieStorage = {
         i++;
       }
       if (chunks.length > 0) {
+        // console.log(`[AuthDebug] Found ${chunks.length} chunks for ${key}`);
         rawVal = chunks.join("");
       }
     }
 
-    if (!rawVal) return null;
+    if (!rawVal) {
+      // console.log("[AuthDebug] No value found");
+      return null;
+    }
 
     // Decoding attempts
     // 1. Try raw JSON
-    try { return JSON.parse(rawVal); } catch (e) { }
+    try {
+      const res = JSON.parse(rawVal);
+      // console.log("[AuthDebug] Raw JSON parsed success");
+      return res;
+    } catch (e) { }
 
     // 2. Try URL-decoded JSON
     const decodedVal = decodeURIComponent(rawVal);
-    try { return JSON.parse(decodedVal); } catch (e) { }
+    try {
+      const res = JSON.parse(decodedVal);
+      // console.log("[AuthDebug] URL-decoded JSON parsed success");
+      return res;
+    } catch (e) { }
 
     // 3. Try Base64 decoding (Supabase standard)
     try {
-      let toDecode = decodedVal;
+      let toDecode = decodedVal.trim();
+      // Remove 'base64-' prefix if present
       if (toDecode.startsWith('base64-')) {
         toDecode = toDecode.slice(7);
       }
-      // Fix URL-safe base64 to standard base64 if needed
+      // Fix URL-safe base64 to standard base64
       const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
-      return JSON.parse(atob(base64Standard));
+      const jsonStr = atob(base64Standard);
+      const res = JSON.parse(jsonStr);
+      // console.log("[AuthDebug] Base64 parsed success");
+      return res;
     } catch (e) {
-      // console.warn('Cookie parse failed', e);
+      console.error("[AuthDebug] All parse attempts failed for cookie", e);
     }
     return null;
   },
