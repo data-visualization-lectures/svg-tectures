@@ -238,7 +238,7 @@ class DatavizGlobalHeader {
 
     // アカウントページのURL
     const accountUrl = `${AUTH_APP_URL}/account`;
-    const loginUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${encodeURIComponent(window.location.href)}`;
+    const loginUrl = `${AUTH_APP_URL}/auth/login?redirect_to=${encodeURIComponent(window.location.href)}`;
 
     let rightContent = '';
 
@@ -309,7 +309,7 @@ function performRedirect(url, reason) {
 async function verifyUserAccess(session) {
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
-    const signUpUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
+    const signUpUrl = `${AUTH_APP_URL}/auth/login?redirect_to=${redirectTo}`;
     performRedirect(signUpUrl, 'Unauthenticated');
     return null;
   }
