@@ -47,12 +47,12 @@ const cookieStorage = {
   setItem: (key, value) => {
     let encoded;
     try { encoded = btoa(value); } catch (e) { return; }
-    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
+    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=Lax; Secure`;
     if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     document.cookie = cookieStr;
   },
   removeItem: (key) => {
-    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
+    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
     if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
     document.cookie = cookieStr;
   },
@@ -376,3 +376,4 @@ async function initDatavizToolAuth() {
 
 // 自動実行
 initDatavizToolAuth();
+window.supabase = supabase;
