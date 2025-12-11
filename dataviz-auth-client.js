@@ -28,19 +28,48 @@ const cookieStorage = {
     const cookies = document.cookie
       .split(";")
       .map((c) => c.trim())
-      .filter(Boolean);
+      .reduce((acc, current) => {
+        const [k, ...v] = current.split("=");
+        acc[k] = v.join("=");
+        return acc;
+      }, {});
 
-    for (const c of cookies) {
-      const [k, ...rest] = c.split("=");
-      if (k === key) {
-        const rawVal = decodeURIComponent(rest.join("="));
-        try { return JSON.parse(rawVal); } catch (e) { }
-        try {
-          let toDecode = rawVal.startsWith('base64-') ? rawVal.slice(7) : rawVal;
-          const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
-          return JSON.parse(atob(base64Standard));
-        } catch (e) { return null; }
+    let rawVal = cookies[key];
+
+    // If exact key not found, try to find chunked cookies (key.0, key.1, ...)
+    if (!rawVal) {
+      const chunks = [];
+      let i = 0;
+      while (cookies[`${key}.${i}`]) {
+        chunks.push(cookies[`${key}.${i}`]);
+        i++;
       }
+      if (chunks.length > 0) {
+        rawVal = chunks.join("");
+      }
+    }
+
+    if (!rawVal) return null;
+
+    // Decoding attempts
+    // 1. Try raw JSON
+    try { return JSON.parse(rawVal); } catch (e) { }
+
+    // 2. Try URL-decoded JSON
+    const decodedVal = decodeURIComponent(rawVal);
+    try { return JSON.parse(decodedVal); } catch (e) { }
+
+    // 3. Try Base64 decoding (Supabase standard)
+    try {
+      let toDecode = decodedVal;
+      if (toDecode.startsWith('base64-')) {
+        toDecode = toDecode.slice(7);
+      }
+      // Fix URL-safe base64 to standard base64 if needed
+      const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(base64Standard));
+    } catch (e) {
+      // console.warn('Cookie parse failed', e);
     }
     return null;
   },
