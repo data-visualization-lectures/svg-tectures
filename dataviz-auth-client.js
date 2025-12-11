@@ -98,9 +98,23 @@ const cookieStorage = {
     document.cookie = cookieStr;
   },
   removeItem: (key) => {
-    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
-    if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
-    document.cookie = cookieStr;
+    const deleteCookie = (name) => {
+      let cookieStr = `${name}=; Max-Age=0; Path=/; SameSite=Lax; Secure`;
+      if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
+      document.cookie = cookieStr;
+    };
+
+    // Delete main cookie
+    deleteCookie(key);
+
+    // Delete chunked cookies (key.0, key.1, ...)
+    // Iterate over all cookies to find chunks
+    const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+    cookies.forEach(cookieKey => {
+      if (cookieKey.startsWith(`${key}.`)) {
+        deleteCookie(cookieKey);
+      }
+    });
   },
 };
 
