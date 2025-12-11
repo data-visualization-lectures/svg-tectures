@@ -309,8 +309,8 @@ function performRedirect(url, reason) {
 async function verifyUserAccess(session) {
   if (!session) {
     const redirectTo = encodeURIComponent(window.location.href);
-    const signUpUrl = `${AUTH_APP_URL}/auth/login?redirect_to=${redirectTo}`;
-    performRedirect(signUpUrl, 'Unauthenticated');
+    const loginUrl = `${AUTH_APP_URL}/auth/login?redirect_to=${redirectTo}`;
+    performRedirect(loginUrl, 'Unauthenticated');
     return null;
   }
 
@@ -334,7 +334,7 @@ async function verifyUserAccess(session) {
     const isActive = status === "active" || status === "trialing" || isCanceledButValid;
 
     if (!isActive) {
-      performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
+      performRedirect(`${AUTH_APP_URL}/account`, `Inactive Subscription (${status})`);
       return null;
     }
 
